@@ -23,14 +23,25 @@ class FlexLoaderPlugin(QWidget):
         self.flexloader_menu = plugin_menu
 
         self.load_action = QAction("Load File...", self)
-        self.load_action.triggered.connect(self.launch_loader)
+        self.load_action.triggered.connect(self.launch_file_loader)
         self.flexloader_menu.addAction(self.load_action)
+
+        self.load_zarr_action = QAction("Load Zarr Store...", self)
+        self.load_zarr_action.triggered.connect(self.launch_zarr_loader)
+        self.flexloader_menu.addAction(self.load_zarr_action)
 
     def close(self):
         pass
 
-    def launch_loader(self) -> None:
+    def launch_file_loader(self) -> None:
         filepath = FlexLoaderDialog.select_file(self.parent)
+        self.launch_loader(filepath)
+
+    def launch_zarr_loader(self) -> None:
+        filepath = FlexLoaderDialog.select_zarr_store(self.parent)
+        self.launch_loader(filepath)
+
+    def launch_loader(self, filepath: str | None) -> None:
         if not filepath:
             return
 

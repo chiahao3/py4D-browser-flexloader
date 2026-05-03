@@ -55,3 +55,28 @@ def test_zarr_tree_scanning_when_zarr_is_available(tmp_path):
     assert data.path == "/entry/data"
     assert data.shape == (2, 3, 4, 5)
     assert data.dtype == "float32"
+
+
+def test_zarr_root_array_scanning_when_zarr_is_available(tmp_path):
+    zarr = __import__("pytest").importorskip("zarr")
+
+    path = tmp_path / "array.zarr"
+    root = zarr.open_array(
+        str(path),
+        mode="w",
+        shape=(2, 3, 4, 5),
+        chunks=(1, 3, 4, 5),
+        dtype="float32",
+    )
+    root.attrs["units"] = "counts"
+
+    from py4d_browser_plugin.flexloader.backends import ZarrSource
+
+    source = ZarrSource(str(path))
+    root_node = source.scan()
+    assert root_node.path == "/"
+    assert root_node.name == "array.zarr"
+    assert root_node.is_array
+    assert root_node.shape == (2, 3, 4, 5)
+    assert root_node.dtype == "float32"
+    assert source.get_array("/") is not None

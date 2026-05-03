@@ -112,17 +112,20 @@ class ZarrSource(DataSource):
         if suffixes[-2:] == [".zarr", ".zip"] or suffixes[-1:] == [".zip"]:
             try:
                 self._store = zarr.storage.ZipStore(filepath, mode="r")
-                self._root = zarr.open_group(store=self._store, mode="r")
+                self._root = zarr.open(store=self._store, mode="r")
             except Exception:
                 self._store = None
-                self._root = zarr.open_group(filepath, mode="r")
+                self._root = zarr.open(filepath, mode="r")
         else:
-            self._root = zarr.open_group(filepath, mode="r")
+            self._root = zarr.open(filepath, mode="r")
         self._root_node: DataNode | None = None
 
     def scan(self) -> DataNode:
         self._arrays.clear()
-        self._root_node = self._scan_group(self._root, "/")
+        if _is_zarr_array(self._root):
+            self._root_node = self._scan_array(self._root, "/")
+        else:
+            self._root_node = self._scan_group(self._root, "/")
         return self._root_node
 
     def close(self) -> None:
@@ -159,6 +162,20 @@ class ZarrSource(DataSource):
             else:
                 node.children.append(self._scan_group(child, child_path))
         return node
+
+    def _scan_array(self, array, path: str) -> DataNode:
+        self._arrays[path] = array
+        chunks = getattr(array, "chunks", None)
+        return DataNode(
+            path=path,
+            name=Path(self.filepath).name if path == "/" else path.rsplit("/", 1)[-1],
+            kind="array",
+            backend=self.backend,
+            shape=tuple(int(size) for size in array.shape),
+            dtype=str(array.dtype),
+            chunks=tuple(chunks) if chunks is not None else None,
+            attrs=_stringify_attrs(getattr(array, "attrs", {})),
+        )
 
 
 def _iter_zarr_children(group) -> Iterable[tuple[str, Any]]:
