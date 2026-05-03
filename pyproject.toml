@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,6 +10,8 @@ authors = [
 ]
 description = "py4D-browser plugin for flexible HDF5 and Zarr dataset loading"
 readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE.txt"]
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
