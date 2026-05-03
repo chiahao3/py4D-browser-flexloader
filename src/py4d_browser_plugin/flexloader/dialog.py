@@ -52,19 +52,29 @@ class FlexLoaderDialog(QDialog):
         self._open_source(filepath)
 
     @classmethod
-    def select_file(cls, parent) -> str | None:
+    def select_hdf5_file(cls, parent) -> str | None:
         filename, _ = QFileDialog.getOpenFileName(
             parent,
             "Open HDF5 Data",
             "",
-            "HDF5 (*.h5 *.hdf5 *.emd *.mat *.py4dstem);;Zarr Zip (*.zip *.zarr.zip);;Any file (*)",
+            "HDF5 (*.h5 *.hdf5 *.emd *.mat *.py4dstem);;Any file (*)",
         )
         return filename or None
 
     @classmethod
-    def select_zarr_store(cls, parent) -> str | None:
-        directory = QFileDialog.getExistingDirectory(parent, "Open Zarr Store", "")
+    def select_zarr_directory(cls, parent) -> str | None:
+        directory = QFileDialog.getExistingDirectory(parent, "Open Zarr Directory", "")
         return directory or None
+
+    @classmethod
+    def select_zarr_zip_file(cls, parent) -> str | None:
+        filename, _ = QFileDialog.getOpenFileName(
+            parent,
+            "Open Zarr Zip File",
+            "",
+            "Zarr Zip (*.zip *.zarr.zip);;Any file (*)",
+        )
+        return filename or None
 
     def closeEvent(self, event):
         self.close_source()

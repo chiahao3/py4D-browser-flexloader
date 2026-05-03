@@ -3,9 +3,10 @@
 `py4D-browser-flexloader` is a py4D-browser plugin that loads arbitrary HDF5
 and Zarr datasets into py4DGUI as 4D-STEM datacubes.
 
-After installation, launch `py4DGUI` and open **Plugins > Flex Loader > Load
-File...** for HDF5-like files or **Plugins > Flex Loader > Load Zarr Store...**
-for directory-backed Zarr stores. The loader lets you browse the internal file
+After installation, launch `py4DGUI` and open one of the Flex Loader actions:
+**Load HDF5 File...** for HDF5-like files, **Load Zarr Directory...** for
+directory-backed Zarr stores, or **Load Zarr Zip File...** for Zarr stores saved
+as `.zip`/`.zarr.zip` files. The loader lets you browse the internal file
 hierarchy, inspect array shape and metadata, assign source dimensions to
 `Scan Y`, `Scan X`, `Detector Y`, and `Detector X`, and fix any extra dimensions
 at a selected index. Datasets stored as `(Nscans, ky, kx)` or
