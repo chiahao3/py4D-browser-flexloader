@@ -20,6 +20,12 @@ a `py4DSTEM.DataCube`. This is intentionally conservative because py4DGUI's
 current viewer code expects NumPy-like array behavior for repeated slicing and
 reductions.
 
+Use **Update Preview** in the loader dialog to read a cheap pair of 2D previews
+before loading: a sqrt-scaled diffraction pattern from the central scan
+position, and an axial bright-field image from the central diffraction pixel.
+The preview path reads only those slices from HDF5/Zarr instead of loading the
+full selected 4D dataset.
+
 ## Installation
 
 ```bash

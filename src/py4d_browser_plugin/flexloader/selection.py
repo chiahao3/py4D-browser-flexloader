@@ -25,6 +25,13 @@ class DimensionSelection:
     scan_shapes: tuple[tuple[int, int] | None, ...] = ()
 
 
+@dataclass(frozen=True)
+class PreviewArrays:
+    diffraction: np.ndarray
+    axial_bf: np.ndarray
+    description: str
+
+
 def default_roles(ndim: int) -> list[str]:
     roles = [ROLE_FIXED] * ndim
     if ndim >= 4:
@@ -140,6 +147,125 @@ def load_datacube_array(array, selection: DimensionSelection) -> np.ndarray:
         )
     permutation = [kept_roles.index(role) for role in DATACUBE_ROLES]
     if permutation != list(range(4)):
+        subset = np.transpose(subset, permutation)
+    return np.asarray(subset)
+
+
+def load_preview_arrays(array, selection: DimensionSelection) -> PreviewArrays:
+    shape = tuple(int(size) for size in array.shape)
+    validate_selection(shape, selection)
+    scan_shape = _mapped_datacube_shape(shape, selection)
+    scan_y, scan_x, detector_y, detector_x = scan_shape
+
+    scan_y_center = scan_y // 2
+    scan_x_center = scan_x // 2
+    detector_y_center = detector_y // 2
+    detector_x_center = detector_x // 2
+
+    diffraction = _read_mapped_slice(
+        array,
+        selection,
+        {
+            ROLE_SCAN_Y: scan_y_center,
+            ROLE_SCAN_X: scan_x_center,
+            ROLE_DETECTOR_Y: slice(None),
+            ROLE_DETECTOR_X: slice(None),
+        },
+        output_roles=(ROLE_DETECTOR_Y, ROLE_DETECTOR_X),
+    )
+    axial_bf = _read_mapped_slice(
+        array,
+        selection,
+        {
+            ROLE_SCAN_Y: slice(None),
+            ROLE_SCAN_X: slice(None),
+            ROLE_DETECTOR_Y: detector_y_center,
+            ROLE_DETECTOR_X: detector_x_center,
+        },
+        output_roles=(ROLE_SCAN_Y, ROLE_SCAN_X),
+    )
+
+    description = (
+        f"DP: scan center ({scan_y_center}, {scan_x_center}); "
+        f"Axial BF: detector center ({detector_y_center}, {detector_x_center})"
+    )
+    return PreviewArrays(
+        diffraction=np.asarray(diffraction),
+        axial_bf=np.asarray(axial_bf),
+        description=description,
+    )
+
+
+def _mapped_datacube_shape(
+    shape: Sequence[int], selection: DimensionSelection
+) -> tuple[int, int, int, int]:
+    scan_shapes = normalize_scan_shapes(len(shape), selection.scan_shapes)
+    role_sizes: dict[str, int] = {}
+    for axis, (size, role) in enumerate(zip(shape, selection.roles)):
+        if role == ROLE_FLATTENED_SCAN:
+            scan_shape = scan_shapes[axis]
+            role_sizes[ROLE_SCAN_Y], role_sizes[ROLE_SCAN_X] = scan_shape
+        elif role != ROLE_FIXED:
+            role_sizes[role] = int(size)
+    return tuple(role_sizes[role] for role in DATACUBE_ROLES)
+
+
+def _read_mapped_slice(
+    array,
+    selection: DimensionSelection,
+    target_by_role: Mapping[str, int | slice],
+    output_roles: Sequence[str],
+) -> np.ndarray:
+    shape = tuple(int(size) for size in array.shape)
+    scan_shapes = normalize_scan_shapes(len(shape), selection.scan_shapes)
+
+    indexer = []
+    kept_roles = []
+    flattened_axis = None
+    flattened_scan_shape = None
+
+    for axis, (role, fixed_index) in enumerate(
+        zip(selection.roles, selection.fixed_indices)
+    ):
+        if role == ROLE_FIXED:
+            indexer.append(int(fixed_index))
+        elif role == ROLE_FLATTENED_SCAN:
+            scan_y_target = target_by_role[ROLE_SCAN_Y]
+            scan_x_target = target_by_role[ROLE_SCAN_X]
+            _, scan_x = scan_shapes[axis]
+            if isinstance(scan_y_target, slice) and isinstance(scan_x_target, slice):
+                indexer.append(slice(None))
+                flattened_axis = len(kept_roles)
+                flattened_scan_shape = scan_shapes[axis]
+                kept_roles.extend((ROLE_SCAN_Y, ROLE_SCAN_X))
+            elif isinstance(scan_y_target, int) and isinstance(scan_x_target, int):
+                indexer.append(scan_y_target * scan_x + scan_x_target)
+            else:
+                raise ValueError(
+                    "Flattened Scan preview requires both scan axes to be sliced "
+                    "or both scan axes to be fixed."
+                )
+        else:
+            target = target_by_role[role]
+            indexer.append(target)
+            if isinstance(target, slice):
+                kept_roles.append(role)
+
+    subset = np.asarray(array[tuple(indexer)])
+    if flattened_axis is not None:
+        scan_y, scan_x = flattened_scan_shape
+        subset = np.reshape(
+            subset,
+            (
+                *subset.shape[:flattened_axis],
+                scan_y,
+                scan_x,
+                *subset.shape[flattened_axis + 1 :],
+            ),
+        )
+
+    permutation = [kept_roles.index(role) for role in output_roles]
+    if permutation != list(range(len(output_roles))):
         subset = np.transpose(subset, permutation)
     return np.asarray(subset)
 

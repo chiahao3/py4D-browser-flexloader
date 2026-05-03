@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+import pyqtgraph as pg
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAbstractItemView,
@@ -27,7 +29,7 @@ from PyQt5.QtWidgets import (
 from .backends import DataNode, DataSource, open_source
 from .selection import ALL_ROLES, DATACUBE_ROLES, DimensionSelection, default_roles
 from .selection import ROLE_FIXED, ROLE_FLATTENED_SCAN, default_scan_shape
-from .selection import validate_selection
+from .selection import load_preview_arrays, validate_selection
 
 if TYPE_CHECKING:
     from py4D_browser import DataViewer
@@ -45,6 +47,10 @@ class FlexLoaderDialog(QDialog):
         self.index_boxes: list[QSpinBox] = []
         self.scan_y_boxes: list[QSpinBox] = []
         self.scan_x_boxes: list[QSpinBox] = []
+        self.preview_button: QPushButton | None = None
+        self.diffraction_preview: pg.ImageView | None = None
+        self.axial_bf_preview: pg.ImageView | None = None
+        self.preview_status: QLabel | None = None
 
         self.setWindowTitle(f"Flex Loader - {Path(filepath).name}")
         self.resize(900, 600)
@@ -109,6 +115,25 @@ class FlexLoaderDialog(QDialog):
         self.mapping_layout = QGridLayout(self.mapping_box)
         right_layout.addWidget(self.mapping_box)
 
+        self.preview_box = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(self.preview_box)
+        preview_top_layout = QHBoxLayout()
+        self.preview_button = QPushButton("Update Preview")
+        self.preview_button.setEnabled(False)
+        self.preview_button.clicked.connect(self._update_preview)
+        preview_top_layout.addWidget(self.preview_button)
+        self.preview_status = QLabel("Select a dataset and valid mapping.")
+        preview_top_layout.addWidget(self.preview_status, stretch=1)
+        preview_layout.addLayout(preview_top_layout)
+
+        preview_image_layout = QHBoxLayout()
+        self.diffraction_preview = _make_image_view()
+        self.axial_bf_preview = _make_image_view()
+        preview_image_layout.addWidget(_labeled_widget("Central DP", self.diffraction_preview))
+        preview_image_layout.addWidget(_labeled_widget("Axial BF", self.axial_bf_preview))
+        preview_layout.addLayout(preview_image_layout)
+        right_layout.addWidget(self.preview_box, stretch=1)
+
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         self.load_button = QPushButton("Load")
@@ -160,7 +185,8 @@ class FlexLoaderDialog(QDialog):
         self.selected_node = node if isinstance(node, DataNode) else None
         self._update_details()
         self._build_mapping_controls()
-        self._update_load_enabled()
+        self._mapping_changed()
+        self._clear_preview()
 
     def _update_details(self) -> None:
         node = self.selected_node
@@ -204,13 +230,13 @@ class FlexLoaderDialog(QDialog):
             role_box = QComboBox()
             role_box.addItems(ALL_ROLES)
             role_box.setCurrentText(defaults[axis])
-            role_box.currentTextChanged.connect(self._update_load_enabled)
-            role_box.currentTextChanged.connect(self._update_axis_control_states)
+            role_box.currentTextChanged.connect(self._mapping_changed)
             self.role_boxes.append(role_box)
 
             index_box = QSpinBox()
             index_box.setRange(0, max(0, int(size) - 1))
             index_box.setEnabled(defaults[axis] == ROLE_FIXED)
+            index_box.valueChanged.connect(self._mapping_changed)
             self.index_boxes.append(index_box)
 
             scan_y, scan_x = default_scan_shape(int(size))
@@ -218,14 +244,14 @@ class FlexLoaderDialog(QDialog):
             scan_y_box.setRange(1, max(1, int(size)))
             scan_y_box.setValue(scan_y)
             scan_y_box.setEnabled(defaults[axis] == ROLE_FLATTENED_SCAN)
-            scan_y_box.valueChanged.connect(self._update_load_enabled)
+            scan_y_box.valueChanged.connect(self._mapping_changed)
             self.scan_y_boxes.append(scan_y_box)
 
             scan_x_box = QSpinBox()
             scan_x_box.setRange(1, max(1, int(size)))
             scan_x_box.setValue(scan_x)
             scan_x_box.setEnabled(defaults[axis] == ROLE_FLATTENED_SCAN)
-            scan_x_box.valueChanged.connect(self._update_load_enabled)
+            scan_x_box.valueChanged.connect(self._mapping_changed)
             self.scan_x_boxes.append(scan_x_box)
 
             row = axis + 1
@@ -256,10 +282,16 @@ class FlexLoaderDialog(QDialog):
             scan_y_box.setEnabled(role == ROLE_FLATTENED_SCAN)
             scan_x_box.setEnabled(role == ROLE_FLATTENED_SCAN)
 
+    def _mapping_changed(self, *_args) -> None:
+        self._update_axis_control_states()
+        self._update_load_enabled()
+        self._clear_preview()
+
     def _update_load_enabled(self) -> None:
         node = self.selected_node
         if node is None or not node.is_array or node.shape is None:
             self.load_button.setEnabled(False)
+            self.preview_button.setEnabled(False)
             return
         try:
             validate_selection(node.shape, self.get_selection())
@@ -267,6 +299,32 @@ class FlexLoaderDialog(QDialog):
         except ValueError:
             ok = False
         self.load_button.setEnabled(ok)
+        self.preview_button.setEnabled(ok)
+
+    def _clear_preview(self) -> None:
+        if self.diffraction_preview is not None:
+            self.diffraction_preview.clear()
+        if self.axial_bf_preview is not None:
+            self.axial_bf_preview.clear()
+        if self.preview_status is not None:
+            self.preview_status.setText("Preview not updated.")
+
+    def _update_preview(self) -> None:
+        node = self.selected_node
+        source = self.source
+        if node is None or source is None or not node.is_array:
+            return
+        try:
+            array = source.get_array(node.path)
+            previews = load_preview_arrays(array, self.get_selection())
+            diffraction = np.sqrt(np.maximum(previews.diffraction, 0))
+            axial_bf = previews.axial_bf
+            self.diffraction_preview.setImage(diffraction.T, autoLevels=True)
+            self.axial_bf_preview.setImage(axial_bf.T, autoLevels=True)
+            self.preview_status.setText(previews.description)
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not update preview", str(exc))
+            raise
 
     def get_selection(self) -> DimensionSelection:
         scan_shapes = []
@@ -282,3 +340,20 @@ class FlexLoaderDialog(QDialog):
             tuple(box.value() for box in self.index_boxes),
             tuple(scan_shapes),
         )
+
+
+def _make_image_view() -> pg.ImageView:
+    view = pg.ImageView()
+    view.setMinimumHeight(180)
+    view.ui.roiBtn.hide()
+    view.ui.menuBtn.hide()
+    return view
+
+
+def _labeled_widget(label: str, widget: QWidget) -> QWidget:
+    panel = QWidget()
+    layout = QVBoxLayout(panel)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(QLabel(label))
+    layout.addWidget(widget)
+    return panel
