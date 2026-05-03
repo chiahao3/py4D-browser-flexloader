@@ -53,6 +53,8 @@ source:
 - **Load Zarr Zip File...** for Zarr stores saved as `.zip` or `.zarr.zip`
   files.
 
+![Demo of py4D-browser-flexloader](assets/demo.gif)
+
 The loader dialog shows the internal hierarchy of the selected file or store,
 including array paths, shapes, dtypes, chunks, and attributes. Once an array is
 selected, assign its dimensions to:

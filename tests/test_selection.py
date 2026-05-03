@@ -16,6 +16,21 @@ from py4d_browser_plugin.flexloader.selection import (
 )
 
 
+class RecordingArray:
+    def __init__(self, shape):
+        self.shape = shape
+        self.requests = []
+
+    def __getitem__(self, index):
+        self.requests.append(index)
+        result_shape = tuple(
+            size
+            for size, axis_index in zip(self.shape, index)
+            if isinstance(axis_index, slice)
+        )
+        return np.zeros(result_shape)
+
+
 def test_default_roles_use_last_four_axes():
     assert default_roles(5) == [
         ROLE_FIXED,
@@ -58,6 +73,19 @@ def test_preview_plain_4d_dataset_reads_central_dp_and_axial_bf():
     np.testing.assert_array_equal(previews.diffraction, array[1, 1])
     np.testing.assert_array_equal(previews.axial_bf, array[:, :, 2, 2])
     assert "scan center" in previews.description
+
+
+def test_preview_plain_4d_dataset_uses_two_2d_slice_reads():
+    array = RecordingArray((64, 64, 128, 128))
+    selection = DimensionSelection(
+        (ROLE_SCAN_Y, ROLE_SCAN_X, ROLE_DETECTOR_Y, ROLE_DETECTOR_X),
+        (0, 0, 0, 0),
+    )
+    load_preview_arrays(array, selection)
+    assert array.requests == [
+        (32, 32, slice(None), slice(None)),
+        (slice(None), slice(None), 64, 64),
+    ]
 
 
 def test_load_5d_dataset_with_fixed_index():
@@ -112,6 +140,20 @@ def test_preview_flattened_scan_reads_single_dp_and_axial_bf():
     previews = load_preview_arrays(array, selection)
     np.testing.assert_array_equal(previews.diffraction, array[4])
     np.testing.assert_array_equal(previews.axial_bf, array[:, 2, 2].reshape(2, 3))
+
+
+def test_preview_flattened_scan_uses_two_source_slice_reads():
+    array = RecordingArray((4096, 128, 128))
+    selection = DimensionSelection(
+        (ROLE_FLATTENED_SCAN, ROLE_DETECTOR_Y, ROLE_DETECTOR_X),
+        (0, 0, 0),
+        ((64, 64), None, None),
+    )
+    load_preview_arrays(array, selection)
+    assert array.requests == [
+        (2080, slice(None), slice(None)),
+        (slice(None), 64, 64),
+    ]
 
 
 def test_flattened_scan_axis_can_follow_fixed_dimensions():
